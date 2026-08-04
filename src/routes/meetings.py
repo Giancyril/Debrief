@@ -155,6 +155,48 @@ def get_meeting(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /meetings/{meeting_id}/speakers
+# ---------------------------------------------------------------------------
+
+@router.patch(
+    "/{meeting_id}/speakers",
+    response_model=MeetingSummary,
+    summary="Rename speaker labels across a meeting transcript and action items.",
+)
+def update_speakers(
+    meeting_id: str,
+    mapping: dict[str, str],
+    cfg: Config = Depends(get_config),
+) -> MeetingSummary:
+    """
+    Rename speaker labels across transcript segments, action item owners, and store mapping.
+    """
+    from src.pipeline.speaker_manager import rename_speakers
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meeting '{safe_id}' not found.",
+        )
+
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        summary = MeetingSummary.model_validate(data)
+        updated = rename_speakers(summary, mapping)
+        json_path.write_text(updated.model_dump_json(indent=2), encoding="utf-8")
+        return updated
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update speakers: {exc}",
+        )
+
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/export
 # ---------------------------------------------------------------------------
 
