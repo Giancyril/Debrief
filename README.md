@@ -1,17 +1,23 @@
-# AI Meeting Summarizer
+# Debrief — AI Meeting Intelligence Platform
 
-A production-grade meeting intelligence platform powered by **FastAPI** and **Google Gemini 2.5**. Accepts meeting audio uploads (MP3, WAV, M4A, AAC, FLAC, OGG, WebM), generates timestamped transcripts with best-effort speaker diarization using Gemini's native audio understanding (handling both inline audio and the Files API), extracts strictly grounded action items and decisions (traceable via `source_excerpt`), drafts ready-to-send follow-up emails, and provides Markdown / Text export options.
+A production-grade meeting intelligence platform powered by **FastAPI** and **Google Gemini 2.5**. Ingests meeting audio uploads (MP3, WAV, M4A, AAC, FLAC, OGG, WebM), generates timestamped transcripts with speaker diarization using Gemini's native audio understanding (supporting inline audio & Files API), extracts strictly grounded action items and decisions (traceable via `source_excerpt`), drafts ready-to-send follow-up emails, and provides Markdown, CSV, ICS iCalendar, and Text export options.
 
 ---
 
-## Key Features
+## 🚀 Advanced Features Suite
 
-- **Gemini Native Audio Understanding**: Directly ingests audio files using Google Gemini 2.5 Flash.
-- **Smart Audio Routing**: Automatically routes small audio files (< 20 MB) inline and larger/longer files through the **Gemini Files API** with automatic remote file cleanup.
-- **Strict Grounding & Auditability**: Every `ActionItem` and `Decision` includes a `source_excerpt` snippet pointing directly to the transcript quote where it was stated.
-- **Zero Fabrication**: Unstated owners or deadlines remain `None`. Casual meetings without decisions/tasks return clean empty lists (`[]`).
-- **Follow-Up Email Drafting**: Generates a professional follow-up email draft prefixed with `[DRAFT — PLEASE REVIEW BEFORE SENDING]`.
-- **Export & Storage**: Export summaries as structured Markdown or plain text via `GET /meetings/{id}/export`.
+1. **Speaker Diarization & Speaker Renaming**: Interactive speaker avatar editor to rename `"Speaker 1"` to `"Sarah Connor"` across the transcript, action items, and stored speaker mapping.
+2. **Audio Player & Timestamp Synchronization**: Audio playback markers and real-time segment highlighting.
+3. **Multi-Format Task Exporter**: Export action items directly as **CSV spreadsheets**, **iCalendar (.ics)** event files for calendars, or **Markdown checklists**.
+4. **Interactive Task Status Checkboxes**: Check off tasks, set status (`open`, `in_progress`, `completed`), and persist updates.
+5. **Meeting Dynamics & Talk-Time Analytics**: Speaker talk-time distribution %, meeting tone classification (*Productive*, *Consensus-Heavy*, *Debated*), and participation balance index.
+6. **Multi-Language Synthesis**: Synthesize transcripts, summaries, and follow-up emails in 6+ target languages (English, Spanish, French, German, Japanese, Chinese).
+7. **Executive Email Tone Selector**: Re-draft follow-up emails in distinct tones (*Action-Oriented*, *Formal Boardroom*, *Concise Slack*).
+8. **Meeting Series Comparison & Sync Delta**: Compare two meeting summaries (e.g. Sprint Sync #1 vs #2) to track resolved vs ongoing vs newly added action items.
+9. **Printable 1-Page Boardroom Brief**: Condenses meetings into an executive boardroom memo with 1-click printing support.
+10. **Full-Text Meeting Search Engine**: Real-time keyword search across past meeting transcripts, tasks, and decisions.
+11. **Next Meeting Agenda Generator**: Automatically creates the next meeting agenda based on unresolved open questions & pending action items.
+12. **Meeting Tagging & Categories**: Categorize meetings (`Sprint`, `Sales Call`, `1-on-1`, `All-Hands`).
 
 ---
 
@@ -23,28 +29,39 @@ ai-meeting-summarizer/
 │   ├── main.py                    # FastAPI application entrypoint
 │   ├── config.py                  # Environment config & thresholds
 │   ├── pipeline/
-│   │   ├── audio_validator.py     # Extension, MIME, & file size validation
+│   │   ├── audio_validator.py     # Extension, MIME, & size validation
 │   │   ├── transcriber.py         # Gemini native audio -> Transcript
 │   │   ├── extractor.py           # Grounded ActionItem & Decision extraction
-│   │   └── email_drafter.py       # Follow-up email draft generator
-│   ├── models/
-│   │   └── schemas.py             # Pydantic models (Transcript, ActionItem, Decision, MeetingSummary)
-│   ├── services/
-│   │   └── gemini_client.py       # Gemini Client wrapper (Inline + Files API)
+│   │   ├── email_drafter.py       # Follow-up email draft generator
+│   │   ├── speaker_manager.py     # Speaker label remapping engine
+│   │   ├── action_status_manager.py # Action status toggle manager
+│   │   └── translator.py         # Multi-language synthesis
+│   ├── output/
+│   │   ├── task_exporter.py       # CSV, ICS iCalendar, and Markdown exporter
+│   │   ├── sentiment_analyzer.py  # Talk-time & meeting dynamics analyzer
+│   │   ├── email_tone_drafter.py  # Executive tone re-drafter
+│   │   ├── meeting_diff.py        # Meeting series diff engine
+│   │   ├── boardroom_brief.py     # 1-page boardroom memo generator
+│   │   └── agenda_generator.py    # Next meeting agenda generator
 │   ├── storage/
-│   │   └── file_manager.py        # Temporary audio file management & cleanup
+│   │   ├── file_manager.py        # Temporary audio file storage
+│   │   └── meeting_search.py      # Full-text search engine
+│   ├── models/
+│   │   └── schemas.py             # Pydantic data models
 │   └── routes/
-│       └── meetings.py            # API routes (POST /upload, GET /{id}, GET /{id}/export)
+│       └── meetings.py            # API endpoints (/upload, /search, /speakers, /export, /analytics, /brief)
 ├── tests/
 │   ├── test_audio_validator.py
 │   ├── test_transcriber.py
 │   ├── test_extractor.py
 │   ├── test_email_drafter.py
-│   ├── test_schemas.py
+│   ├── test_speaker_manager.py
+│   ├── test_action_status_manager.py
+│   ├── test_task_exporter.py
+│   ├── test_sentiment_analyzer.py
+│   ├── test_advanced_features.py
 │   └── test_integration.py
-├── .env.example
-├── pyproject.toml
-├── requirements.txt
+├── frontend/                      # React + Vite UI
 └── README.md
 ```
 
@@ -53,8 +70,6 @@ ai-meeting-summarizer/
 ## Quick Start
 
 ### 1. Environment Setup
-
-Copy `.env.example` to `.env` and set your `GEMINI_API_KEY`:
 
 ```bash
 cp .env.example .env
@@ -68,39 +83,22 @@ MAX_UPLOAD_SIZE_MB=500
 INLINE_AUDIO_THRESHOLD_MB=20
 ```
 
-### 2. Install Dependencies
+### 2. Install Dependencies & Run Backend
 
 ```bash
 pip install -r requirements.txt
-```
-
-### 3. Run the API Server
-
-```bash
 uvicorn src.main:app --reload --port 8000
 ```
 
-Documentation will be available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+### 3. Run Frontend (React + Vite)
 
----
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## API Endpoints
-
-### `POST /meetings/upload`
-Uploads a meeting audio file and executes the 3-stage pipeline:
-1. `transcribe_audio`: Audio -> `Transcript`
-2. `extract_meeting_data`: Transcript -> Action items, Decisions, Key points, Open questions
-3. `draft_follow_up_email`: Extraction -> Follow-up Email Draft
-
-**Request:** `multipart/form-data` with `file`
-
-**Response:** `MeetingSummary` JSON object.
-
-### `GET /meetings/{meeting_id}`
-Retrieves a previously processed meeting summary JSON.
-
-### `GET /meetings/{meeting_id}/export?format=markdown|text`
-Exports a meeting summary as formatted Markdown or plain text.
+Open `http://localhost:5173` in your browser.
 
 ---
 
