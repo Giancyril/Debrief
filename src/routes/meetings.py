@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import PlainTextResponse
 
 from src.config import Config
-from src.models.schemas import MeetingSummary, MeetingAnalytics
+from src.models.schemas import MeetingSummary, MeetingAnalytics, RiskReport
 from src.pipeline.audio_validator import get_audio_mime_type, validate_audio_bytes
 from src.storage.file_manager import FileManager
 
@@ -291,7 +291,35 @@ def get_meeting_analytics(
 
 
 # ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/risk-report
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/risk-report",
+    response_model=RiskReport,
+    summary="Analyze meeting delivery risk signals and recommendations.",
+)
+def get_meeting_risk_report(
+    meeting_id: str,
+    cfg: Config = Depends(get_config),
+) -> RiskReport:
+    """Analyze action items and open questions to compute delivery risk score and recommendations."""
+    from src.output.risk_detector import analyze_meeting_risk
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summary = MeetingSummary.model_validate(data)
+    return analyze_meeting_risk(summary)
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/brief
+
 # ---------------------------------------------------------------------------
 
 @router.get(
