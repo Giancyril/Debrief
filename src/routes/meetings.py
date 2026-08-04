@@ -197,7 +197,50 @@ def update_speakers(
 
 
 # ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/tasks/export
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/tasks/export",
+    summary="Export action items as CSV, ICS iCalendar, or Markdown checklist.",
+)
+def export_tasks(
+    meeting_id: str,
+    format: str = Query(default="csv", enum=["csv", "ics", "markdown"]),
+    cfg: Config = Depends(get_config),
+):
+    """Export action items from a meeting summary as CSV, ICS, or Markdown checklist."""
+    from src.output.task_exporter import export_to_csv, export_to_ics, export_to_markdown_checklist
+    from fastapi.responses import PlainTextResponse
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        summary = MeetingSummary.model_validate(data)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+    if format == "csv":
+        content = export_to_csv(summary.action_items)
+        media_type = "text/csv"
+    elif format == "ics":
+        content = export_to_ics(summary.action_items, summary.filename)
+        media_type = "text/calendar"
+    else:
+        content = export_to_markdown_checklist(summary.action_items, summary.filename)
+        media_type = "text/markdown"
+
+    return PlainTextResponse(content=content, media_type=media_type)
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/export
+
 # ---------------------------------------------------------------------------
 
 @router.get(
