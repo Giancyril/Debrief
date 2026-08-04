@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import CustomSelectDropdown from "./components/CustomSelectDropdown";
 import {
   uploadMeetingAudio,
   fetchMeetingSummary,
@@ -431,25 +432,18 @@ export default function App() {
                 {/* Target Language Selection */}
                 <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 12, color: "var(--text-3)" }}>Target Output Language:</span>
-                  <select
+                  <CustomSelectDropdown
                     value={outputLanguage}
-                    onChange={(e) => setOutputLanguage(e.target.value)}
-                    style={{
-                      background: "var(--surface-2)",
-                      color: "var(--text-1)",
-                      border: "1px solid var(--border-hi)",
-                      padding: "4px 8px",
-                      borderRadius: "var(--radius-sm)",
-                      fontSize: 12,
-                    }}
-                  >
-                    <option value="English">English</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="French">French</option>
-                    <option value="German">German</option>
-                    <option value="Japanese">Japanese</option>
-                    <option value="Chinese">Chinese</option>
-                  </select>
+                    onChange={(val) => setOutputLanguage(val)}
+                    options={[
+                      { value: "English", label: "English" },
+                      { value: "Spanish", label: "Spanish" },
+                      { value: "French", label: "French" },
+                      { value: "German", label: "German" },
+                      { value: "Japanese", label: "Japanese" },
+                      { value: "Chinese", label: "Chinese" },
+                    ]}
+                  />
                 </div>
 
                 {/* Selected File Bar */}
@@ -605,28 +599,18 @@ export default function App() {
                 </button>
 
                 {/* Task Exporter Dropdown */}
-                <select
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      handleExportTasksFormat(e.target.value);
-                      e.target.value = "";
-                    }
+                <CustomSelectDropdown
+                  placeholder="Export Tasks..."
+                  value=""
+                  onChange={(val) => {
+                    if (val) handleExportTasksFormat(val);
                   }}
-                  style={{
-                    background: "var(--surface-2)",
-                    color: "var(--text-1)",
-                    border: "1px solid var(--border-hi)",
-                    padding: "6px 10px",
-                    borderRadius: "var(--radius-sm)",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  <option value="">Export Tasks...</option>
-                  <option value="csv">CSV Spreadsheet</option>
-                  <option value="ics">iCalendar (.ics)</option>
-                  <option value="markdown">Markdown Checklist</option>
-                </select>
+                  options={[
+                    { value: "csv", label: "CSV Spreadsheet" },
+                    { value: "ics", label: "iCalendar (.ics)" },
+                    { value: "markdown", label: "Markdown Checklist" },
+                  ]}
+                />
 
                 <button className="btn btn-primary" onClick={() => setActiveTab("email")}>
                   View Email Draft
@@ -697,26 +681,15 @@ export default function App() {
                     {uniqueOwners.length > 0 && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 12, color: "var(--text-3)" }}>Filter owner:</span>
-                        <select
+                        <CustomSelectDropdown
                           value={filterOwner}
-                          onChange={(e) => setFilterOwner(e.target.value)}
-                          style={{
-                            background: "var(--surface-2)",
-                            color: "var(--text-1)",
-                            border: "1px solid var(--border-hi)",
-                            padding: "4px 8px",
-                            borderRadius: "var(--radius-sm)",
-                            fontSize: 12,
-                          }}
-                        >
-                          <option value="all">All Owners</option>
-                          {uniqueOwners.map((owner) => (
-                            <option key={owner} value={owner}>
-                              {owner}
-                            </option>
-                          ))}
-                          <option value="unassigned">Unassigned</option>
-                        </select>
+                          onChange={(val) => setFilterOwner(val)}
+                          options={[
+                            { value: "all", label: "All Owners" },
+                            ...uniqueOwners.map((owner) => ({ value: owner, label: owner })),
+                            { value: "unassigned", label: "Unassigned" },
+                          ]}
+                        />
                       </div>
                     )}
                   </div>
@@ -929,22 +902,15 @@ export default function App() {
                   <div className="section-heading">Follow-Up Email Draft</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     {/* Executive Tone Switcher */}
-                    <select
+                    <CustomSelectDropdown
                       value={summary.email_tone || "action_oriented"}
-                      onChange={(e) => handleRedraftEmail(e.target.value)}
-                      style={{
-                        background: "var(--surface-2)",
-                        color: "var(--text-1)",
-                        border: "1px solid var(--border-hi)",
-                        padding: "4px 8px",
-                        borderRadius: "var(--radius-sm)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <option value="action_oriented">Tone: Action Oriented</option>
-                      <option value="formal_boardroom">Tone: Formal Boardroom</option>
-                      <option value="concise_slack">Tone: Concise Slack</option>
-                    </select>
+                      onChange={(val) => handleRedraftEmail(val)}
+                      options={[
+                        { value: "action_oriented", label: "Tone: Action Oriented" },
+                        { value: "formal_boardroom", label: "Tone: Formal Boardroom" },
+                        { value: "concise_slack", label: "Tone: Concise Slack" },
+                      ]}
+                    />
 
                     <button className="btn btn-primary" onClick={handleCopyEmail}>
                       {copiedEmail ? "✓ Copied Body" : "Copy Email Body"}
