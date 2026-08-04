@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { uploadMeetingAudio, fetchMeetingSummary, exportMeeting, checkHealth } from "./api";
 
-// ── Sample Audio Helper for Demo / Testing ───────────────────────────
 function createSampleAudioBlob() {
-  // Generate a brief valid silent WAV byte header for instant demo upload
   const sampleRate = 8000;
   const numChannels = 1;
   const bitsPerSample = 16;
-  const numSamples = sampleRate * 2; // 2 seconds
+  const numSamples = sampleRate * 2;
   const blockAlign = (numChannels * bitsPerSample) / 8;
   const byteRate = sampleRate * blockAlign;
   const dataSize = numSamples * blockAlign;
@@ -26,7 +24,7 @@ function createSampleAudioBlob() {
   writeString(8, "WAVE");
   writeString(12, "fmt ");
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
   view.setUint32(28, byteRate, true);
@@ -39,23 +37,18 @@ function createSampleAudioBlob() {
 }
 
 export default function App() {
-  // Health & connection state
   const [health, setHealth] = useState(null);
-
-  // File upload state
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState(0); // 0: Idle, 1: Validating, 2: Transcribing, 3: Extracting, 4: Emailing
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Summary state
   const [summary, setSummary] = useState(null);
   const [activeTab, setActiveTab] = useState("overview"); // "overview" | "transcript" | "email"
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [filterOwner, setFilterOwner] = useState("all");
 
-  // History & Drawer state
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
   const [pastMeetingIdInput, setPastMeetingIdInput] = useState("");
 
@@ -67,7 +60,6 @@ export default function App() {
       .catch(() => setHealth({ status: "warn", gemini_api_key_configured: false }));
   }, []);
 
-  // ── Drag & Drop Handlers ──────────────────────────────────────────
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -103,7 +95,6 @@ export default function App() {
     setErrorMsg("");
   };
 
-  // ── Pipeline Execution Handler ────────────────────────────────────
   const handleStartProcessing = async () => {
     if (!selectedFile || uploading) return;
     setUploading(true);
@@ -111,18 +102,16 @@ export default function App() {
     setPipelineStage(1);
 
     try {
-      // Step 1: Validation
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
       setPipelineStage(2); // Transcribing
 
-      // Step 2: Call upload endpoint (executes transcription + extraction + email draft on backend)
       const summaryResult = await uploadMeetingAudio(selectedFile);
       setPipelineStage(3); // Extracting
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 300));
       setPipelineStage(4); // Emailing
 
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 200));
       setSummary(summaryResult);
       setActiveTab("overview");
     } catch (err) {
@@ -133,7 +122,6 @@ export default function App() {
     }
   };
 
-  // ── Email Copy & Export Handlers ──────────────────────────────────
   const handleCopyEmail = () => {
     if (!summary?.email_draft) return;
     navigator.clipboard.writeText(summary.email_draft);
@@ -170,7 +158,6 @@ export default function App() {
     }
   };
 
-  // ── Derived Owners List for Filtering ─────────────────────────────
   const uniqueOwners = summary?.action_items
     ? Array.from(new Set(summary.action_items.map((ai) => ai.owner).filter(Boolean)))
     : [];
@@ -185,182 +172,220 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {/* ── Top Navigation Bar ────────────────────────────────────── */}
+      {/* ── Top Header Navbar ────────────────────────────────────────────── */}
       <header className="header">
         <div className="brand-logo" onClick={() => setSummary(null)}>
           <div className="brand-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="22" />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
             </svg>
           </div>
           <span>Debrief</span>
-          <span className="brand-tag">AI Meeting Intelligence</span>
+          <span className="brand-tag">Executive Intelligence</span>
         </div>
 
         <div className="header-right">
           {health && (
-            <div className="status-chip" title="Gemini 2.5 API Status">
+            <div className="status-chip" title="Gemini API Connectivity">
               <span className={`status-dot ${health.status === "healthy" ? "healthy" : "warn"}`} />
-              <span>{health.status === "healthy" ? "Gemini 2.5 Active" : "Check API Key"}</span>
+              <span>{health.status === "healthy" ? "Gemini Active" : "Key Needed"}</span>
             </div>
           )}
 
-          <button className="btn" onClick={() => setShowHistoryDrawer(true)}>
+          <button className="btn btn-ghost" onClick={() => setShowHistoryDrawer(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             Lookup Past Meeting
           </button>
         </div>
       </header>
 
-      {/* ── Main View Container ───────────────────────────────────── */}
+      {/* ── Main Content Area ────────────────────────────────────────────── */}
       <main className="main-content">
         {!summary && (
           <>
-            {/* Hero Banner */}
-            <div className="hero-section">
-              <h1 className="hero-title">
-                Turn Meeting Audio into <span className="hero-gradient">Verified Action & Decisions</span>
-              </h1>
-              <p className="hero-subtitle">
-                Upload your meeting recording. Native Gemini audio understanding produces timestamped transcripts,
-                grounded action items with owner assignment, decisions with exact source quotes, and a ready-to-send email draft.
+            <div className="page-intro">
+              <h1 className="page-title">Meeting Intelligence Workbench</h1>
+              <p className="page-subtitle">
+                Upload meeting audio to generate verifiable, grounded action items with transcript quotes, agreed decisions, and a follow-up email draft.
               </p>
             </div>
 
-            {/* Dropzone Upload Card */}
-            <div
-              className={`upload-card ${dragActive ? "drag-active" : ""}`}
-              onDragEnter={handleDrag}
-              onDragOver={handleDrag}
-              onDragLeave={handleDrag}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                type="file"
-                ref={fileInputRef}
-                style={{ display: "none" }}
-                accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm"
-                onChange={handleFileSelect}
-              />
-              <div className="upload-icon-wrapper">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17 8 12 3 7 8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
+            {/* Two-Column Workbench Layout */}
+            <div className="workbench-grid">
+              {/* Left Column: Dropzone & File Selection */}
+              <div>
+                <div
+                  className={`upload-panel ${dragActive ? "drag-active" : ""}`}
+                  onDragEnter={handleDrag}
+                  onDragOver={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                    accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm"
+                    onChange={handleFileSelect}
+                  />
+
+                  <div className="upload-icon-row">
+                    <div className="upload-glyph">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M12 2v10" />
+                        <path d="M17 7l-5-5-5 5" />
+                        <path d="M2 17v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="upload-heading">
+                        {selectedFile ? selectedFile.name : "Select or drag meeting audio recording"}
+                      </div>
+                      <div className="upload-subheading">
+                        {selectedFile
+                          ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Ready for pipeline processing`
+                          : "Click to select file from your system"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="specs-row">
+                    <span className="spec-chip">MP3</span>
+                    <span className="spec-chip">WAV</span>
+                    <span className="spec-chip">M4A</span>
+                    <span className="spec-chip">FLAC</span>
+                    <span className="spec-chip">WEBM</span>
+                    <span className="spec-chip" style={{ color: "var(--text-3)" }}>Max 500 MB</span>
+                  </div>
+                </div>
+
+                {/* Selected File Bar */}
+                {selectedFile && (
+                  <div className="selected-file-card">
+                    <div className="file-meta-group">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} style={{ color: "var(--accent-hi)", flexShrink: 0 }}>
+                        <path d="M9 18V5l12-2v13" />
+                        <circle cx="6" cy="18" r="3" />
+                        <circle cx="18" cy="16" r="3" />
+                      </svg>
+                      <div>
+                        <div className="file-name">{selectedFile.name}</div>
+                        <div className="file-size">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="btn btn-ghost" onClick={() => setSelectedFile(null)} disabled={uploading}>
+                        Remove
+                      </button>
+                      <button className="btn btn-primary" onClick={handleStartProcessing} disabled={uploading}>
+                        {uploading ? (
+                          <>
+                            <div className="stage-spinner" /> Processing…
+                          </>
+                        ) : (
+                          "Run Pipeline"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample Loader */}
+                {!selectedFile && (
+                  <div style={{ marginTop: 16 }}>
+                    <button className="btn btn-ghost" onClick={handleLoadSampleAudio} style={{ fontSize: 12 }}>
+                      Load Sample Meeting Audio (.wav)
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="upload-title">
-                {selectedFile ? selectedFile.name : "Drop meeting audio recording here"}
-              </div>
-              <div className="upload-desc">
-                {selectedFile
-                  ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Click to change file`
-                  : "or click to browse from your computer (MP3, WAV, M4A, AAC, FLAC, WebM)"}
-              </div>
-              <div className="format-chips">
-                <span className="format-chip">MP3</span>
-                <span className="format-chip">WAV</span>
-                <span className="format-chip">M4A</span>
-                <span className="format-chip">FLAC</span>
-                <span className="format-chip">WEBM</span>
-                <span className="format-chip">Max 500MB</span>
+
+              {/* Right Column: Process Explanation */}
+              <div className="explanation-panel">
+                <div className="explanation-title">Pipeline Workflow</div>
+                <div className="process-step-list">
+                  <div className="process-step-item">
+                    <div className="process-step-num">1</div>
+                    <div>
+                      <div className="process-step-title">Native Audio Transcription</div>
+                      <div className="process-step-desc">
+                        Gemini 2.5 ingests audio directly to produce timestamped, speaker-labeled text.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="process-step-item">
+                    <div className="process-step-num">2</div>
+                    <div>
+                      <div className="process-step-title">Grounded Extraction</div>
+                      <div className="process-step-desc">
+                        Extracts action items and decisions with exact transcript quotes. No unstated task assignments.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="process-step-item">
+                    <div className="process-step-num">3</div>
+                    <div>
+                      <div className="process-step-title">Follow-Up Email Synthesis</div>
+                      <div className="process-step-desc">
+                        Formats extracted notes into a reviewable draft ready for email delivery.
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Selected File Action Bar */}
-            {selectedFile && (
-              <div className="audio-preview-card">
-                <div className="audio-info">
-                  <div className="audio-icon-box">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path d="M9 18V5l12-2v13" />
-                      <circle cx="6" cy="18" r="3" />
-                      <circle cx="18" cy="16" r="3" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="audio-filename">{selectedFile.name}</div>
-                    <div className="audio-meta">{(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · Ready for processing</div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button className="btn" onClick={() => setSelectedFile(null)} disabled={uploading}>
-                    Remove
-                  </button>
-                  <button className="btn btn-primary" onClick={handleStartProcessing} disabled={uploading}>
-                    {uploading ? (
-                      <>
-                        <div className="spinner" /> Processing Audio…
-                      </>
-                    ) : (
-                      "🚀 Generate Debrief Summary"
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Quick Demo Sample Loader */}
-            {!selectedFile && (
-              <div style={{ textAlign: "center" }}>
-                <span style={{ fontSize: 13, color: "var(--text-3)", marginRight: 8 }}>Need a test file?</span>
-                <button className="btn" onClick={handleLoadSampleAudio}>
-                  ⚡ Load Sample Meeting Audio
-                </button>
-              </div>
-            )}
-
-            {/* Error Message Display */}
+            {/* Error Banner */}
             {errorMsg && (
               <div
                 style={{
                   marginTop: 20,
-                  padding: "14px 18px",
-                  background: "rgba(251, 113, 133, 0.1)",
+                  padding: "12px 16px",
+                  background: "var(--rose-dim)",
                   border: "1px solid var(--rose)",
                   borderRadius: "var(--radius-md)",
                   color: "var(--rose)",
                   fontSize: 13,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
                 }}
               >
-                ⚠️ <span>{errorMsg}</span>
+                ⚠️ {errorMsg}
               </div>
             )}
 
-            {/* Pipeline Stage Progress Tracker */}
+            {/* Staged Processing Progress Rail */}
             {uploading && (
-              <div className="progress-card">
-                <div className="progress-header">
-                  <span>Gemini Native Processing Pipeline</span>
-                  <span style={{ fontSize: 12, color: "var(--brand-hi)" }}>Stage {pipelineStage} of 4</span>
+              <div className="processing-panel">
+                <div className="processing-title">
+                  <span>Processing Meeting Audio</span>
+                  <span style={{ fontSize: 12, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
+                    Stage {pipelineStage} / 4
+                  </span>
                 </div>
-                <div className="stage-steps">
-                  <div className={`stage-step ${pipelineStage === 1 ? "active" : pipelineStage > 1 ? "completed" : ""}`}>
-                    <div className="stage-number">{pipelineStage > 1 ? "✓" : "1"}</div>
-                    <div className="stage-label">Audio Validation</div>
+
+                <div className="pipeline-rail">
+                  <div className={`rail-stage ${pipelineStage === 1 ? "active" : pipelineStage > 1 ? "completed" : ""}`}>
+                    <div className="rail-stage-icon">{pipelineStage > 1 ? "✓" : "1"}</div>
+                    <div className="rail-stage-label">Audio Validation</div>
                   </div>
-                  <div className={`stage-step ${pipelineStage === 2 ? "active" : pipelineStage > 2 ? "completed" : ""}`}>
-                    <div className="stage-number">{pipelineStage > 2 ? "✓" : "2"}</div>
-                    <div className="stage-label">Gemini Audio Transcription</div>
+
+                  <div className={`rail-stage ${pipelineStage === 2 ? "active" : pipelineStage > 2 ? "completed" : ""}`}>
+                    <div className="rail-stage-icon">{pipelineStage > 2 ? "✓" : "2"}</div>
+                    <div className="rail-stage-label">Transcribing Audio</div>
                   </div>
-                  <div className={`stage-step ${pipelineStage === 3 ? "active" : pipelineStage > 3 ? "completed" : ""}`}>
-                    <div className="stage-number">{pipelineStage > 3 ? "✓" : "3"}</div>
-                    <div className="stage-label">Grounded Extraction</div>
-                  </div>
-                  <div className={`stage-step ${pipelineStage === 4 ? "active" : pipelineStage > 4 ? "completed" : ""}`}>
-                    <div className="stage-number">{pipelineStage > 4 ? "✓" : "4"}</div>
-                    <div className="stage-label">Follow-up Email Synthesis</div>
+
+                  <div className={`rail-stage ${pipelineStage === 3 ? "active" : pipelineStage > 3 ? "completed" : ""}`}>
+                    <div className="rail-stage-icon">{pipelineStage > 3 ? "✓" : "3"}</div>
+                    <div className="rail-stage-label">Grounded Extractions</div>
                   </div>
                 </div>
               </div>
@@ -368,89 +393,91 @@ export default function App() {
           </>
         )}
 
-        {/* ── Meeting Summary Dashboard View ────────────────────────────── */}
+        {/* ── Results Summary View ────────────────────────────────────────── */}
         {summary && (
-          <div className="summary-container">
-            {/* Summary Top Bar */}
-            <div className="summary-header-card">
-              <div className="summary-title-group">
-                <div className="summary-filename">{summary.filename}</div>
-                <div className="summary-meta-row">
-                  <span className="meta-badge">📅 {summary.created_at}</span>
-                  <span className="meta-badge">🆔 {summary.id}</span>
-                  <span className="meta-badge">📝 {summary.transcript?.segments?.length || 0} Spoken Segments</span>
-                  <span className="meta-badge">⚡ {summary.action_items?.length || 0} Action Items</span>
+          <div className="results-container">
+            {/* Results Top Card */}
+            <div className="results-header-card">
+              <div>
+                <div className="results-filename">{summary.filename}</div>
+                <div className="results-meta-row">
+                  <span className="meta-chip">{summary.created_at}</span>
+                  <span className="meta-chip" style={{ fontFamily: "var(--font-mono)" }}>ID: {summary.id}</span>
+                  <span className="meta-chip">{summary.transcript?.segments?.length || 0} Segments</span>
+                  <span className="meta-chip" style={{ color: "var(--amber)" }}>{summary.action_items?.length || 0} Tasks</span>
+                  <span className="meta-chip" style={{ color: "var(--emerald)" }}>{summary.decisions?.length || 0} Decisions</span>
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn" onClick={() => setSummary(null)}>
-                  ← Upload New Recording
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-ghost" onClick={() => setSummary(null)}>
+                  ← New Upload
                 </button>
-                <button className="btn" onClick={() => handleDownloadExport("markdown")}>
-                  ⬇️ Export Markdown
-                </button>
+
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button className="btn" onClick={() => handleDownloadExport("markdown")}>
+                    Export (.md)
+                  </button>
+                  <button className="btn" onClick={() => handleDownloadExport("text")}>
+                    Export (.txt)
+                  </button>
+                </div>
+
                 <button className="btn btn-primary" onClick={() => setActiveTab("email")}>
-                  ✉️ View Email Draft
+                  View Email Draft
                 </button>
               </div>
             </div>
 
-            {/* Confidence Note Banner if degraded */}
+            {/* Quality / Confidence Note Banner */}
             {summary.confidence_note && (
               <div
                 style={{
-                  padding: "12px 18px",
-                  background: "rgba(251, 191, 36, 0.1)",
+                  padding: "10px 16px",
+                  background: "var(--amber-dim)",
                   border: "1px solid var(--amber)",
                   borderRadius: "var(--radius-md)",
                   color: "var(--amber)",
                   fontSize: 13,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
                 }}
               >
-                ⚠️ <span><strong>Analyst Note:</strong> {summary.confidence_note}</span>
+                ⚠️ <strong>Analyst Note:</strong> {summary.confidence_note}
               </div>
             )}
 
-            {/* Tabs Navigation */}
-            <div className="tabs-bar">
+            {/* Navigation Tabs */}
+            <div className="results-tabs">
               <button
-                className={`tab-btn ${activeTab === "overview" ? "active" : ""}`}
+                className={`tab-item ${activeTab === "overview" ? "active" : ""}`}
                 onClick={() => setActiveTab("overview")}
               >
-                📊 Overview & Grounded Extractions
+                Overview & Extractions
               </button>
               <button
-                className={`tab-btn ${activeTab === "transcript" ? "active" : ""}`}
+                className={`tab-item ${activeTab === "transcript" ? "active" : ""}`}
                 onClick={() => setActiveTab("transcript")}
               >
-                🎙️ Timestamped Transcript
+                Transcript Reference
               </button>
               <button
-                className={`tab-btn ${activeTab === "email" ? "active" : ""}`}
+                className={`tab-item ${activeTab === "email" ? "active" : ""}`}
                 onClick={() => setActiveTab("email")}
               >
-                ✉️ Follow-Up Email Draft
+                Follow-Up Email Draft
               </button>
             </div>
 
             {/* TAB 1: OVERVIEW & EXTRACTIONS */}
             {activeTab === "overview" && (
-              <div className="content-grid">
-                {/* Action Items Card */}
-                <div className="section-card">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <span>⚡ Grounded Action Items</span>
-                      <span className="meta-badge" style={{ background: "var(--brand-dim)", color: "var(--brand-hi)" }}>
-                        {filteredActionItems.length}
-                      </span>
+              <div className="content-section">
+                {/* Action Items List */}
+                <div className="section-block">
+                  <div className="section-header-row">
+                    <div className="section-heading">
+                      <span>Action Items</span>
+                      <span className="count-badge">{filteredActionItems.length}</span>
                     </div>
 
-                    {/* Owner Filter Dropdown */}
                     {uniqueOwners.length > 0 && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 12, color: "var(--text-3)" }}>Filter owner:</span>
@@ -460,7 +487,7 @@ export default function App() {
                           style={{
                             background: "var(--surface-2)",
                             color: "var(--text-1)",
-                            border: "1px solid var(--border)",
+                            border: "1px solid var(--border-hi)",
                             padding: "4px 8px",
                             borderRadius: "var(--radius-sm)",
                             fontSize: 12,
@@ -479,29 +506,30 @@ export default function App() {
                   </div>
 
                   {filteredActionItems.length === 0 ? (
-                    <div style={{ fontSize: 13, color: "var(--text-3)", padding: "16px 0" }}>
-                      No action items matching filter criteria.
+                    <div style={{ fontSize: 13, color: "var(--text-3)", padding: "8px 0" }}>
+                      No action items recorded for this filter.
                     </div>
                   ) : (
-                    <div className="action-items-list">
+                    <div className="action-list">
                       {filteredActionItems.map((ai) => (
-                        <div key={ai.id} className="action-item-card">
-                          <div className="action-item-top">
-                            <div className="action-desc">
-                              <span style={{ color: "var(--brand-hi)", marginRight: 6 }}>[{ai.id}]</span>
-                              {ai.description}
+                        <div key={ai.id} className="action-card">
+                          <div className="action-card-header">
+                            <div>
+                              <span className="action-id">[{ai.id}]</span>
+                              <span className="action-title">{ai.description}</span>
                             </div>
+
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                              <span className={`owner-pill ${!ai.owner ? "unassigned" : ""}`}>
-                                👤 {ai.owner || "Unassigned"}
+                              <span className={`owner-tag ${!ai.owner ? "unassigned" : ""}`}>
+                                {ai.owner ? `Assignee: ${ai.owner}` : "No owner specified"}
                               </span>
-                              {ai.due_date && <span className="due-pill">📅 Due: {ai.due_date}</span>}
+                              {ai.due_date && <span className="due-tag">Due: {ai.due_date}</span>}
                             </div>
                           </div>
 
-                          {/* Traceable Source Excerpt Quote */}
-                          <div className="source-excerpt-box">
-                            <span className="source-icon">💬 Quote:</span>
+                          {/* Grounding Transcript Excerpt */}
+                          <div className="grounding-quote-box">
+                            <span className="grounding-label">Transcript Quote</span>
                             <span>"{ai.source_excerpt}"</span>
                           </div>
                         </div>
@@ -510,31 +538,32 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Decisions Made Card */}
-                <div className="section-card">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <span>🎯 Agreed Decisions</span>
-                      <span className="meta-badge" style={{ background: "rgba(52, 211, 153, 0.15)", color: "var(--emerald)" }}>
+                {/* Agreed Decisions */}
+                <div className="section-block">
+                  <div className="section-header-row">
+                    <div className="section-heading">
+                      <span>Agreed Decisions</span>
+                      <span className="count-badge" style={{ color: "var(--emerald)" }}>
                         {summary.decisions?.length || 0}
                       </span>
                     </div>
                   </div>
 
                   {(!summary.decisions || summary.decisions.length === 0) ? (
-                    <div style={{ fontSize: 13, color: "var(--text-3)", padding: "16px 0" }}>
-                      No explicit decisions recorded in this session.
+                    <div style={{ fontSize: 13, color: "var(--text-3)", padding: "8px 0" }}>
+                      No explicit consensus decisions recorded.
                     </div>
                   ) : (
-                    <div className="decisions-list">
+                    <div className="decision-list">
                       {summary.decisions.map((d) => (
                         <div key={d.id} className="decision-card">
-                          <div className="decision-desc">
-                            <span style={{ color: "var(--emerald)", marginRight: 6 }}>[{d.id}]</span>
-                            {d.description}
+                          <div>
+                            <span className="decision-id">[{d.id}]</span>
+                            <span className="decision-text">{d.description}</span>
                           </div>
-                          <div className="source-excerpt-box">
-                            <span className="source-icon" style={{ color: "var(--emerald)" }}>💬 Quote:</span>
+
+                          <div className="grounding-quote-box">
+                            <span className="grounding-label" style={{ color: "var(--emerald)" }}>Transcript Quote</span>
                             <span>"{d.source_excerpt}"</span>
                           </div>
                         </div>
@@ -543,35 +572,33 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Key Discussion Points & Open Questions Grid */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-                  {/* Key Discussion Points */}
-                  <div className="section-card">
-                    <div className="card-header">
-                      <div className="card-title">📌 Key Discussion Points</div>
+                {/* Key Discussion Points & Open Questions */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                  <div className="section-block">
+                    <div className="section-header-row">
+                      <div className="section-heading">Key Topics Covered</div>
                     </div>
-                    <div className="bullets-list">
+                    <div className="bullet-list">
                       {summary.key_discussion_points?.map((pt, i) => (
-                        <div key={i} className="bullet-item">
-                          <div className="bullet-dot" />
+                        <div key={i} className="bullet-row">
+                          <div className="bullet-marker" />
                           <span>{pt}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Open Questions */}
-                  <div className="section-card">
-                    <div className="card-header">
-                      <div className="card-title">❓ Open Questions</div>
+                  <div className="section-block">
+                    <div className="section-header-row">
+                      <div className="section-heading">Open Questions</div>
                     </div>
                     {(!summary.open_questions || summary.open_questions.length === 0) ? (
                       <div style={{ fontSize: 13, color: "var(--text-3)" }}>All questions resolved.</div>
                     ) : (
-                      <div className="bullets-list">
+                      <div className="bullet-list">
                         {summary.open_questions.map((q, i) => (
-                          <div key={i} className="bullet-item">
-                            <div className="bullet-dot amber" />
+                          <div key={i} className="bullet-row">
+                            <div className="bullet-marker amber" />
                             <span>{q}</span>
                           </div>
                         ))}
@@ -582,35 +609,35 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 2: FULL TIMESTAMPED TRANSCRIPT */}
+            {/* TAB 2: TRANSCRIPT REFERENCE */}
             {activeTab === "transcript" && (
-              <div className="section-card">
-                <div className="card-header">
-                  <div className="card-title">🎙️ Speaker-Segmented Transcript</div>
-                  <button className="btn" onClick={() => navigator.clipboard.writeText(summary.transcript?.full_text)}>
-                    📋 Copy Full Text
+              <div className="section-block">
+                <div className="section-header-row">
+                  <div className="section-heading">Timestamped Transcript Reference</div>
+                  <button className="btn btn-ghost" onClick={() => navigator.clipboard.writeText(summary.transcript?.full_text)}>
+                    Copy Text
                   </button>
                 </div>
 
-                <div className="transcript-box">
+                <div className="transcript-doc">
                   {summary.transcript?.segments?.map((seg, i) => (
-                    <div key={i} className="transcript-segment">
-                      <div className="segment-header">
-                        <div className="speaker-badge">
-                          <div className="speaker-avatar">
-                            {(seg.speaker || "U")[0].toUpperCase()}
+                    <div key={i} className="transcript-row">
+                      <div className="transcript-meta">
+                        <div className="speaker-tag">
+                          <div className="speaker-avatar-initial">
+                            {(seg.speaker || "P")[0].toUpperCase()}
                           </div>
                           <span>{seg.speaker || "Participant"}</span>
                         </div>
 
                         {(seg.start_time !== null && seg.start_time !== undefined) && (
-                          <span className="timestamp-chip">
-                            ⏱️ {Math.floor(seg.start_time / 60)}:{(seg.start_time % 60).toFixed(0).padStart(2, "0")}
+                          <span className="timestamp-tag">
+                            {Math.floor(seg.start_time / 60)}:{(seg.start_time % 60).toFixed(0).padStart(2, "0")}
                             {seg.end_time ? ` - ${Math.floor(seg.end_time / 60)}:${(seg.end_time % 60).toFixed(0).padStart(2, "0")}` : ""}
                           </span>
                         )}
                       </div>
-                      <div className="segment-text">{seg.text}</div>
+                      <div className="transcript-body">{seg.text}</div>
                     </div>
                   ))}
                 </div>
@@ -619,41 +646,64 @@ export default function App() {
 
             {/* TAB 3: FOLLOW-UP EMAIL DRAFT */}
             {activeTab === "email" && (
-              <div className="section-card">
-                <div className="card-header">
-                  <div className="card-title">✉️ Synthesized Follow-Up Email Draft</div>
-                  <button className="btn btn-primary" onClick={handleCopyEmail}>
-                    {copiedEmail ? "✓ Copied to Clipboard!" : "📋 Copy Email Body"}
-                  </button>
+              <div className="section-block">
+                <div className="section-header-row">
+                  <div className="section-heading">Follow-Up Email Draft</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary" onClick={handleCopyEmail}>
+                      {copiedEmail ? "✓ Copied Body" : "Copy Email Body"}
+                    </button>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent("Follow-up: " + summary.filename)}&body=${encodeURIComponent(summary.email_draft)}`}
+                      className="btn"
+                      style={{ textDecoration: "none" }}
+                    >
+                      Open Mail Client ↗
+                    </a>
+                  </div>
                 </div>
 
-                <div className="draft-label-banner">
-                  ℹ️ [DRAFT — PLEASE REVIEW BEFORE SENDING] · Review action items and owners before sending to participants.
-                </div>
+                <div className="email-client-container">
+                  <div className="email-header-bar">
+                    <div className="email-header-field">
+                      <strong>To:</strong> <span>[Meeting Participants]</span>
+                    </div>
+                    <div className="email-header-field">
+                      <strong>Subject:</strong> <span>Follow-Up: {summary.filename}</span>
+                    </div>
+                  </div>
 
-                <div className="email-draft-card">{summary.email_draft}</div>
+                  <div style={{ padding: 12 }}>
+                    <div className="draft-watermark">
+                      <span>DRAFT — PLEASE REVIEW BEFORE SENDING</span>
+                      <span style={{ fontSize: 11, fontWeight: 500 }}>Editable</span>
+                    </div>
+                  </div>
+
+                  <div className="email-body-area">{summary.email_draft}</div>
+                </div>
               </div>
             )}
           </div>
         )}
       </main>
 
-      {/* ── Past Meeting Lookup Drawer ───────────────────────────────── */}
+      {/* ── Past Meeting Lookup Drawer ───────────────────────────────────── */}
       {showHistoryDrawer && (
         <div className="drawer-backdrop" onClick={() => setShowHistoryDrawer(false)}>
-          <div className="drawer-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-header">
-              <div style={{ fontSize: 16, fontWeight: 700 }}>Lookup Past Meeting</div>
-              <button className="close-btn" onClick={() => setShowHistoryDrawer(false)}>
+          <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-title-row">
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Lookup Past Meeting</div>
+              <button className="btn btn-ghost" onClick={() => setShowHistoryDrawer(false)}>
                 ✕
               </button>
             </div>
 
             <div style={{ fontSize: 13, color: "var(--text-2)" }}>
-              Enter a meeting ID to load a previously processed summary.
+              Enter a saved meeting ID to retrieve its summary and grounded extractions.
             </div>
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="text"
                 placeholder="e.g. meet_8f3a912b"
@@ -662,7 +712,7 @@ export default function App() {
                 style={{
                   flex: 1,
                   background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
+                  border: "1px solid var(--border-hi)",
                   color: "var(--text-1)",
                   padding: "8px 12px",
                   borderRadius: "var(--radius-sm)",
