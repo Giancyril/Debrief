@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import { uploadMeetingAudio, fetchMeetingSummary, exportMeeting, checkHealth } from "./api";
+import {
+  uploadMeetingAudio,
+  fetchMeetingSummary,
+  exportMeeting,
+  exportTasks,
+  checkHealth,
+  updateSpeakerNames,
+  updateActionStatus,
+  redraftEmailTone,
+  searchMeetings,
+  fetchBoardroomBrief,
+  fetchNextAgenda,
+} from "./api";
 
 function createSampleAudioBlob() {
   const sampleRate = 8000;
@@ -41,17 +53,32 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [pipelineStage, setPipelineStage] = useState(0); // 0: Idle, 1: Validating, 2: Transcribing, 3: Extracting, 4: Emailing
+  const [pipelineStage, setPipelineStage] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+  const [outputLanguage, setOutputLanguage] = useState("English");
 
   const [summary, setSummary] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "transcript" | "email"
+  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "analytics" | "transcript" | "email" | "agenda"
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [filterOwner, setFilterOwner] = useState("all");
 
+  // Advanced features state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameSpeakerInput, setRenameSpeakerInput] = useState({ oldName: "", newName: "" });
+  const [boardroomBriefText, setBoardroomBriefText] = useState("");
+  const [showBriefModal, setShowBriefModal] = useState(false);
+  const [nextAgendaText, setNextAgendaText] = useState("");
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
   const [pastMeetingIdInput, setPastMeetingIdInput] = useState("");
 
+  // Audio player state
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState(-1);
+  const audioRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -75,8 +102,7 @@ export default function App() {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      setSelectedFile(file);
+      setSelectedFile(e.dataTransfer.files[0]);
       setErrorMsg("");
     }
   };
@@ -103,13 +129,13 @@ export default function App() {
 
     try {
       await new Promise((r) => setTimeout(r, 400));
-      setPipelineStage(2); // Transcribing
+      setPipelineStage(2);
 
-      const summaryResult = await uploadMeetingAudio(selectedFile);
-      setPipelineStage(3); // Extracting
+      const summaryResult = await uploadMeetingAudio(selectedFile, outputLanguage);
+      setPipelineStage(3);
 
       await new Promise((r) => setTimeout(r, 300));
-      setPipelineStage(4); // Emailing
+      setPipelineStage(4);
 
       await new Promise((r) => setTimeout(r, 200));
       setSummary(summaryResult);
@@ -122,13 +148,45 @@ export default function App() {
     }
   };
 
-  const handleCopyEmail = () => {
-    if (!summary?.email_draft) return;
-    navigator.clipboard.writeText(summary.email_draft);
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
+  // Task Status Toggle
+  const handleToggleTaskStatus = async (actionId, currentStatus) => {
+    if (!summary?.id) return;
+    const nextStatus = currentStatus === "completed" ? "open" : "completed";
+    try {
+      const updated = await updateActionStatus(summary.id, actionId, nextStatus);
+      setSummary(updated);
+    } catch (err) {
+      alert("Failed to update status: " + err.message);
+    }
   };
 
+  // Speaker Rename
+  const handleRenameSpeaker = async () => {
+    if (!summary?.id || !renameSpeakerInput.oldName || !renameSpeakerInput.newName) return;
+    try {
+      const updated = await updateSpeakerNames(summary.id, {
+        [renameSpeakerInput.oldName]: renameSpeakerInput.newName,
+      });
+      setSummary(updated);
+      setShowRenameModal(false);
+      setRenameSpeakerInput({ oldName: "", newName: "" });
+    } catch (err) {
+      alert("Failed to rename speaker: " + err.message);
+    }
+  };
+
+  // Email Tone Re-draft
+  const handleRedraftEmail = async (tone) => {
+    if (!summary?.id) return;
+    try {
+      const res = await redraftEmailTone(summary.id, tone);
+      setSummary((prev) => ({ ...prev, email_draft: res.email_draft, email_tone: tone }));
+    } catch (err) {
+      alert("Failed to re-draft email: " + err.message);
+    }
+  };
+
+  // Export handlers
   const handleDownloadExport = async (format = "markdown") => {
     if (!summary?.id) return;
     try {
@@ -145,6 +203,59 @@ export default function App() {
     }
   };
 
+  const handleExportTasksFormat = async (format) => {
+    if (!summary?.id) return;
+    try {
+      const text = await exportTasks(summary.id, format);
+      const ext = format === "ics" ? "ics" : format === "csv" ? "csv" : "md";
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `action_items_${summary.id}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Failed to export tasks: " + err.message);
+    }
+  };
+
+  const handleOpenBoardroomBrief = async () => {
+    if (!summary?.id) return;
+    try {
+      const brief = await fetchBoardroomBrief(summary.id);
+      setBoardroomBriefText(brief);
+      setShowBriefModal(true);
+    } catch (err) {
+      alert("Failed to fetch brief: " + err.message);
+    }
+  };
+
+  const handleLoadNextAgenda = async () => {
+    if (!summary?.id) return;
+    try {
+      const agenda = await fetchNextAgenda(summary.id);
+      setNextAgendaText(agenda);
+      setActiveTab("agenda");
+    } catch (err) {
+      alert("Failed to fetch agenda: " + err.message);
+    }
+  };
+
+  const handleHeaderSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    try {
+      const res = await searchMeetings(searchQuery);
+      setSearchResults(res);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleFetchPastMeeting = async (idToFetch) => {
     const id = idToFetch || pastMeetingIdInput.trim();
     if (!id) return;
@@ -152,9 +263,25 @@ export default function App() {
       const res = await fetchMeetingSummary(id);
       setSummary(res);
       setShowHistoryDrawer(false);
+      setSearchResults([]);
+      setSearchQuery("");
       setActiveTab("overview");
     } catch (err) {
       alert("Error: " + err.message);
+    }
+  };
+
+  // Audio playback time sync
+  const handleTimeUpdate = () => {
+    if (!audioRef.current || !summary?.transcript?.segments) return;
+    const time = audioRef.current.currentTime;
+    setCurrentTime(time);
+
+    const idx = summary.transcript.segments.findIndex(
+      (seg) => seg.start_time !== null && seg.end_time !== null && time >= seg.start_time && time <= seg.end_time
+    );
+    if (idx !== -1 && idx !== activeSegmentIndex) {
+      setActiveSegmentIndex(idx);
     }
   };
 
@@ -172,7 +299,7 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {/* ── Top Header Navbar ────────────────────────────────────────────── */}
+      {/* ── Header Navigation Bar ────────────────────────────────────────── */}
       <header className="header">
         <div className="brand-logo" onClick={() => setSummary(null)}>
           <div className="brand-icon">
@@ -187,6 +314,25 @@ export default function App() {
           <span className="brand-tag">Executive Intelligence</span>
         </div>
 
+        {/* Global Search Bar */}
+        <form onSubmit={handleHeaderSearch} style={{ display: "flex", gap: 6, flex: "0 1 320px" }}>
+          <input
+            type="text"
+            placeholder="Search transcripts & tasks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              background: "var(--surface-2)",
+              border: "1px solid var(--border-hi)",
+              color: "var(--text-1)",
+              padding: "5px 10px",
+              borderRadius: "var(--radius-sm)",
+              fontSize: 12,
+            }}
+          />
+        </form>
+
         <div className="header-right">
           {health && (
             <div className="status-chip" title="Gemini API Connectivity">
@@ -196,14 +342,39 @@ export default function App() {
           )}
 
           <button className="btn btn-ghost" onClick={() => setShowHistoryDrawer(true)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
             Lookup Past Meeting
           </button>
         </div>
       </header>
+
+      {/* Search Results Popover Drawer */}
+      {searchResults.length > 0 && (
+        <div style={{ background: "var(--surface-1)", borderBottom: "1px solid var(--border-hi)", padding: "12px 24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Search Matches ({searchResults.length})</span>
+            <button className="btn btn-ghost" onClick={() => setSearchResults([])} style={{ fontSize: 11 }}>Clear</button>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {searchResults.map((r) => (
+              <div
+                key={r.id}
+                onClick={() => handleFetchPastMeeting(r.id)}
+                style={{
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>{r.filename}</div>
+                <div style={{ color: "var(--text-3)", fontSize: 11 }}>ID: {r.id} · Match score: {r.match_score}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Main Content Area ────────────────────────────────────────────── */}
       <main className="main-content">
@@ -212,11 +383,10 @@ export default function App() {
             <div className="page-intro">
               <h1 className="page-title">Meeting Intelligence Workbench</h1>
               <p className="page-subtitle">
-                Upload meeting audio to generate verifiable, grounded action items with transcript quotes, agreed decisions, and a follow-up email draft.
+                Upload meeting audio to generate verifiable, grounded action items with transcript quotes, agreed decisions, and follow-up email drafts.
               </p>
             </div>
 
-            {/* Two-Column Workbench Layout */}
             <div className="workbench-grid">
               {/* Left Column: Dropzone & File Selection */}
               <div>
@@ -264,6 +434,30 @@ export default function App() {
                     <span className="spec-chip">WEBM</span>
                     <span className="spec-chip" style={{ color: "var(--text-3)" }}>Max 500 MB</span>
                   </div>
+                </div>
+
+                {/* Target Language Selection */}
+                <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-3)" }}>Target Output Language:</span>
+                  <select
+                    value={outputLanguage}
+                    onChange={(e) => setOutputLanguage(e.target.value)}
+                    style={{
+                      background: "var(--surface-2)",
+                      color: "var(--text-1)",
+                      border: "1px solid var(--border-hi)",
+                      padding: "4px 8px",
+                      borderRadius: "var(--radius-sm)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <option value="English">English</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    <option value="German">German</option>
+                    <option value="Japanese">Japanese</option>
+                    <option value="Chinese">Chinese</option>
+                  </select>
                 </div>
 
                 {/* Selected File Bar */}
@@ -335,7 +529,7 @@ export default function App() {
                   <div className="process-step-item">
                     <div className="process-step-num">3</div>
                     <div>
-                      <div className="process-step-title">Follow-Up Email Synthesis</div>
+                      <div className="process-step-title">Executive Email Synthesis</div>
                       <div className="process-step-desc">
                         Formats extracted notes into a reviewable draft ready for email delivery.
                       </div>
@@ -345,7 +539,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Error Banner */}
             {errorMsg && (
               <div
                 style={{
@@ -362,7 +555,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Staged Processing Progress Rail */}
             {uploading && (
               <div className="processing-panel">
                 <div className="processing-title">
@@ -413,15 +605,36 @@ export default function App() {
                 <button className="btn btn-ghost" onClick={() => setSummary(null)}>
                   ← New Upload
                 </button>
+                <button className="btn" onClick={() => setShowRenameModal(true)}>
+                  ✏️ Rename Speakers
+                </button>
+                <button className="btn" onClick={handleOpenBoardroomBrief}>
+                  📜 Boardroom Brief
+                </button>
 
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button className="btn" onClick={() => handleDownloadExport("markdown")}>
-                    Export (.md)
-                  </button>
-                  <button className="btn" onClick={() => handleDownloadExport("text")}>
-                    Export (.txt)
-                  </button>
-                </div>
+                {/* Task Exporter Dropdown */}
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleExportTasksFormat(e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  style={{
+                    background: "var(--surface-2)",
+                    color: "var(--text-1)",
+                    border: "1px solid var(--border-hi)",
+                    padding: "6px 10px",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Export Tasks...</option>
+                  <option value="csv">CSV Spreadsheet</option>
+                  <option value="ics">iCalendar (.ics)</option>
+                  <option value="markdown">Markdown Checklist</option>
+                </select>
 
                 <button className="btn btn-primary" onClick={() => setActiveTab("email")}>
                   View Email Draft
@@ -429,7 +642,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Quality / Confidence Note Banner */}
             {summary.confidence_note && (
               <div
                 style={{
@@ -454,6 +666,12 @@ export default function App() {
                 Overview & Extractions
               </button>
               <button
+                className={`tab-item ${activeTab === "analytics" ? "active" : ""}`}
+                onClick={() => setActiveTab("analytics")}
+              >
+                📊 Dynamics & Talk-Time
+              </button>
+              <button
                 className={`tab-item ${activeTab === "transcript" ? "active" : ""}`}
                 onClick={() => setActiveTab("transcript")}
               >
@@ -465,12 +683,18 @@ export default function App() {
               >
                 Follow-Up Email Draft
               </button>
+              <button
+                className={`tab-item ${activeTab === "agenda" ? "active" : ""}`}
+                onClick={handleLoadNextAgenda}
+              >
+                📅 Next Agenda
+              </button>
             </div>
 
             {/* TAB 1: OVERVIEW & EXTRACTIONS */}
             {activeTab === "overview" && (
               <div className="content-section">
-                {/* Action Items List */}
+                {/* Action Items List with Checkboxes */}
                 <div className="section-block">
                   <div className="section-header-row">
                     <div className="section-heading">
@@ -514,9 +738,25 @@ export default function App() {
                       {filteredActionItems.map((ai) => (
                         <div key={ai.id} className="action-card">
                           <div className="action-card-header">
-                            <div>
-                              <span className="action-id">[{ai.id}]</span>
-                              <span className="action-title">{ai.description}</span>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              <input
+                                type="checkbox"
+                                checked={ai.status === "completed"}
+                                onChange={() => handleToggleTaskStatus(ai.id, ai.status)}
+                                style={{ marginTop: 3, cursor: "pointer" }}
+                              />
+                              <div>
+                                <span className="action-id">[{ai.id}]</span>
+                                <span
+                                  className="action-title"
+                                  style={{
+                                    textDecoration: ai.status === "completed" ? "line-through" : "none",
+                                    color: ai.status === "completed" ? "var(--text-3)" : "var(--text-1)",
+                                  }}
+                                >
+                                  {ai.description}
+                                </span>
+                              </div>
                             </div>
 
                             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -527,7 +767,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Grounding Transcript Excerpt */}
                           <div className="grounding-quote-box">
                             <span className="grounding-label">Transcript Quote</span>
                             <span>"{ai.source_excerpt}"</span>
@@ -572,7 +811,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Key Discussion Points & Open Questions */}
+                {/* Discussion Points & Open Questions */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                   <div className="section-block">
                     <div className="section-header-row">
@@ -609,7 +848,54 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 2: TRANSCRIPT REFERENCE */}
+            {/* TAB 2: DYNAMICS & TALK-TIME ANALYTICS */}
+            {activeTab === "analytics" && (
+              <div className="section-block">
+                <div className="section-header-row">
+                  <div className="section-heading">📊 Meeting Dynamics & Talk-Time Analytics</div>
+                </div>
+
+                {summary.analytics && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Meeting Tone</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent-hi)", marginTop: 4 }}>{summary.analytics.meeting_tone}</div>
+                      </div>
+
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Total Words Spoken</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-1)", marginTop: 4 }}>{summary.analytics.total_words}</div>
+                      </div>
+
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Participation Balance Index</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--emerald)", marginTop: 4 }}>{summary.analytics.participation_ratio}</div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Speaker Talk-Time Distribution</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {Object.entries(summary.analytics.talk_time_percentages || {}).map(([speaker, pct]) => (
+                          <div key={speaker}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                              <span>{speaker}</span>
+                              <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent-hi)" }}>{pct}%</span>
+                            </div>
+                            <div style={{ background: "var(--surface-3)", height: 8, borderRadius: 4, overflow: "hidden" }}>
+                              <div style={{ background: "var(--accent)", height: "100%", width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: TRANSCRIPT REFERENCE */}
             {activeTab === "transcript" && (
               <div className="section-block">
                 <div className="section-header-row">
@@ -621,7 +907,7 @@ export default function App() {
 
                 <div className="transcript-doc">
                   {summary.transcript?.segments?.map((seg, i) => (
-                    <div key={i} className="transcript-row">
+                    <div key={i} className={`transcript-row ${activeSegmentIndex === i ? "active-segment" : ""}`}>
                       <div className="transcript-meta">
                         <div className="speaker-tag">
                           <div className="speaker-avatar-initial">
@@ -644,22 +930,33 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 3: FOLLOW-UP EMAIL DRAFT */}
+            {/* TAB 4: FOLLOW-UP EMAIL DRAFT */}
             {activeTab === "email" && (
               <div className="section-block">
                 <div className="section-header-row">
                   <div className="section-heading">Follow-Up Email Draft</div>
                   <div style={{ display: "flex", gap: 8 }}>
+                    {/* Executive Tone Switcher */}
+                    <select
+                      value={summary.email_tone || "action_oriented"}
+                      onChange={(e) => handleRedraftEmail(e.target.value)}
+                      style={{
+                        background: "var(--surface-2)",
+                        color: "var(--text-1)",
+                        border: "1px solid var(--border-hi)",
+                        padding: "4px 8px",
+                        borderRadius: "var(--radius-sm)",
+                        fontSize: 12,
+                      }}
+                    >
+                      <option value="action_oriented">Tone: Action Oriented</option>
+                      <option value="formal_boardroom">Tone: Formal Boardroom</option>
+                      <option value="concise_slack">Tone: Concise Slack</option>
+                    </select>
+
                     <button className="btn btn-primary" onClick={handleCopyEmail}>
                       {copiedEmail ? "✓ Copied Body" : "Copy Email Body"}
                     </button>
-                    <a
-                      href={`mailto:?subject=${encodeURIComponent("Follow-up: " + summary.filename)}&body=${encodeURIComponent(summary.email_draft)}`}
-                      className="btn"
-                      style={{ textDecoration: "none" }}
-                    >
-                      Open Mail Client ↗
-                    </a>
                   </div>
                 </div>
 
@@ -684,9 +981,82 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* TAB 5: NEXT MEETING AGENDA */}
+            {activeTab === "agenda" && (
+              <div className="section-block">
+                <div className="section-header-row">
+                  <div className="section-heading">📅 Next Meeting Agenda</div>
+                  <button className="btn btn-primary" onClick={() => navigator.clipboard.writeText(nextAgendaText)}>
+                    Copy Agenda Markdown
+                  </button>
+                </div>
+
+                <div className="email-body-area">{nextAgendaText}</div>
+              </div>
+            )}
           </div>
         )}
       </main>
+
+      {/* ── Speaker Rename Modal ───────────────────────────────────────────── */}
+      {showRenameModal && (
+        <div className="drawer-backdrop" onClick={() => setShowRenameModal(false)}>
+          <div className="drawer-content" onClick={(e) => e.stopPropagation()} style={{ width: 380 }}>
+            <div className="drawer-title-row">
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Rename Speaker Label</div>
+              <button className="btn btn-ghost" onClick={() => setShowRenameModal(false)}>✕</button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-3)", display: "block", marginBottom: 4 }}>Original Speaker Label:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Speaker 1"
+                  value={renameSpeakerInput.oldName}
+                  onChange={(e) => setRenameSpeakerInput({ ...renameSpeakerInput, oldName: e.target.value })}
+                  style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-1)", padding: "8px 12px", borderRadius: "var(--radius-sm)" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, color: "var(--text-3)", display: "block", marginBottom: 4 }}>New Custom Name:</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sarah Connor"
+                  value={renameSpeakerInput.newName}
+                  onChange={(e) => setRenameSpeakerInput({ ...renameSpeakerInput, newName: e.target.value })}
+                  style={{ width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-1)", padding: "8px 12px", borderRadius: "var(--radius-sm)" }}
+                />
+              </div>
+
+              <button className="btn btn-primary" onClick={handleRenameSpeaker}>
+                Save Speaker Mapping
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Boardroom Brief Modal ─────────────────────────────────────────── */}
+      {showBriefModal && (
+        <div className="drawer-backdrop" onClick={() => setShowBriefModal(false)}>
+          <div className="drawer-content" onClick={(e) => e.stopPropagation()} style={{ width: 680 }}>
+            <div className="drawer-title-row">
+              <div style={{ fontSize: 15, fontWeight: 700 }}>📜 Executive Boardroom Brief</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary" onClick={() => window.print()}>🖨️ Print Brief</button>
+                <button className="btn btn-ghost" onClick={() => setShowBriefModal(false)}>✕</button>
+              </div>
+            </div>
+
+            <pre style={{ background: "var(--surface-2)", padding: 16, borderRadius: "var(--radius-sm)", fontFamily: "var(--font-mono)", fontSize: 12, whiteSpace: "pre-wrap" }}>
+              {boardroomBriefText}
+            </pre>
+          </div>
+        </div>
+      )}
 
       {/* ── Past Meeting Lookup Drawer ───────────────────────────────────── */}
       {showHistoryDrawer && (
