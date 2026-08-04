@@ -13,6 +13,7 @@ import {
   fetchBoardroomBrief,
   fetchNextAgenda,
   generateMeetingTitle,
+  fetchRiskReport,
 } from "./api";
 
 function createSampleAudioBlob() {
@@ -60,7 +61,8 @@ export default function App() {
   const [outputLanguage, setOutputLanguage] = useState("English");
 
   const [summary, setSummary] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "analytics" | "transcript" | "email" | "agenda"
+  const [riskReport, setRiskReport] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "analytics" | "transcript" | "email" | "agenda" | "risk"
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [filterOwner, setFilterOwner] = useState("all");
 
@@ -251,6 +253,17 @@ export default function App() {
       setActiveTab("agenda");
     } catch (err) {
       alert("Failed to fetch agenda: " + err.message);
+    }
+  };
+
+  const handleLoadRiskReport = async () => {
+    if (!summary?.id) return;
+    try {
+      const report = await fetchRiskReport(summary.id);
+      setRiskReport(report);
+      setActiveTab("risk");
+    } catch (err) {
+      alert("Failed to fetch risk report: " + err.message);
     }
   };
 
@@ -691,6 +704,12 @@ export default function App() {
               >
                 📅 Next Agenda
               </button>
+              <button
+                className={`tab-item ${activeTab === "risk" ? "active" : ""}`}
+                onClick={handleLoadRiskReport}
+              >
+                ⚠️ Delivery Risk Detector
+              </button>
             </div>
 
             {/* TAB 1: OVERVIEW & EXTRACTIONS */}
@@ -977,6 +996,93 @@ export default function App() {
                 </div>
 
                 <div className="email-body-area">{nextAgendaText}</div>
+              </div>
+            )}
+
+            {/* TAB 6: RISK DETECTOR */}
+            {activeTab === "risk" && (
+              <div className="section-block">
+                <div className="section-header-row">
+                  <div className="section-heading">⚠️ Delivery Risk Analysis</div>
+                </div>
+
+                {riskReport && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Overall Risk Level</div>
+                        <div style={{
+                          fontSize: 18,
+                          fontWeight: 700,
+                          color: riskReport.overall_risk_level === "HIGH" ? "var(--rose)" : riskReport.overall_risk_level === "MEDIUM" ? "var(--amber)" : "var(--emerald)",
+                          marginTop: 4,
+                        }}>
+                          {riskReport.overall_risk_level} (Score: {riskReport.risk_score}/100)
+                        </div>
+                      </div>
+
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Unassigned Action Items</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: riskReport.unassigned_count > 0 ? "var(--rose)" : "var(--text-1)", marginTop: 4 }}>
+                          {riskReport.unassigned_count} / {riskReport.total_tasks}
+                        </div>
+                      </div>
+
+                      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", padding: "14px 20px", borderRadius: "var(--radius-md)", flex: 1 }}>
+                        <div style={{ fontSize: 12, color: "var(--text-3)" }}>Tasks Missing Target Date</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: riskReport.no_due_date_count > 0 ? "var(--amber)" : "var(--text-1)", marginTop: 4 }}>
+                          {riskReport.no_due_date_count} / {riskReport.total_tasks}
+                        </div>
+                      </div>
+                    </div>
+
+                    {riskReport.flags.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Identified Risk Flags ({riskReport.flags.length})</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {riskReport.flags.map((flag, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                background: "var(--surface-2)",
+                                borderLeft: `4px solid ${flag.severity === "HIGH" ? "var(--rose)" : flag.severity === "MEDIUM" ? "var(--amber)" : "var(--blue)"}`,
+                                padding: "10px 14px",
+                                borderRadius: "var(--radius-sm)",
+                                fontSize: 13,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                                <span style={{ fontWeight: 600, fontSize: 12 }}>{flag.flag_type}</span>
+                                <span style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: flag.severity === "HIGH" ? "var(--rose)" : flag.severity === "MEDIUM" ? "var(--amber)" : "var(--blue)",
+                                }}>
+                                  {flag.severity} SEVERITY
+                                </span>
+                              </div>
+                              <div style={{ color: "var(--text-2)" }}>{flag.message}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {riskReport.recommendations.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Actionable Recommendations</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {riskReport.recommendations.map((rec, idx) => (
+                            <div key={idx} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--emerald)" }}>
+                              <span>✓</span>
+                              <span>{rec}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
