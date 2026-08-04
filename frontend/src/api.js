@@ -114,3 +114,13 @@ export async function fetchNextAgenda(meetingId) {
   }
   return res.text();
 }
+
+export async function generateMeetingTitle(meetingId) {
+  const res = await fetch(`/meetings/${encodeURIComponent(meetingId)}/generate-title`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error("Failed to generate title.");
+  }
+  return res.json();
+}
