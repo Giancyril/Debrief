@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -36,6 +36,10 @@ class ActionItem(BaseModel):
         default=None,
         description="Explicitly mentioned deadline/date; None if no date was stated.",
     )
+    status: str = Field(
+        default="open",
+        description="Action item status: 'open', 'in_progress', or 'completed'.",
+    )
     source_excerpt: str = Field(
         description="Exact or near-exact quote/excerpt from transcript for grounding and auditability.",
     )
@@ -47,6 +51,29 @@ class Decision(BaseModel):
     source_excerpt: str = Field(
         description="Exact or near-exact quote/excerpt from transcript for grounding and auditability.",
     )
+
+
+class SpeakerMap(BaseModel):
+    mapping: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of original speaker labels to custom names, e.g. {'Speaker 1': 'Sarah'}.",
+    )
+
+
+class MeetingAnalytics(BaseModel):
+    talk_time_percentages: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Percentage of total talk time per speaker.",
+    )
+    meeting_tone: str = Field(
+        default="Productive",
+        description="Overall meeting tone classification (e.g. 'Productive', 'Consensus-Heavy', 'Debated').",
+    )
+    participation_ratio: float = Field(
+        default=1.0,
+        description="Participation balance index (1.0 = balanced, <0.5 = dominated by one speaker).",
+    )
+    total_words: int = Field(default=0, description="Total word count in transcript.")
 
 
 class MeetingSummary(BaseModel):
@@ -78,3 +105,8 @@ class MeetingSummary(BaseModel):
         default=None,
         description="Warning or quality note if audio was degraded or extraction incomplete.",
     )
+    speaker_map: Optional[SpeakerMap] = Field(default_factory=SpeakerMap)
+    analytics: Optional[MeetingAnalytics] = Field(default=None)
+    tags: List[str] = Field(default_factory=list, description="Categorization tags e.g. ['Sprint', 'Sales'].")
+    output_language: str = Field(default="English", description="Target prose language.")
+    email_tone: str = Field(default="action_oriented", description="Tone style of follow-up email.")
