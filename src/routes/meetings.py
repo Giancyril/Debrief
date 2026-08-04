@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from src.config import Config
-from src.models.schemas import MeetingSummary
+from src.models.schemas import MeetingSummary, MeetingAnalytics
 from src.pipeline.audio_validator import get_audio_mime_type, validate_audio_bytes
 from src.storage.file_manager import FileManager
 
@@ -236,7 +236,38 @@ def update_action_item_status(
 
 
 # ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/analytics
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/analytics",
+    response_model=MeetingAnalytics,
+    summary="Compute meeting speaker talk-time distribution and tone dynamics.",
+)
+def get_meeting_analytics(
+    meeting_id: str,
+    cfg: Config = Depends(get_config),
+) -> MeetingAnalytics:
+    """Compute and return talk-time distribution, tone classification, and participation index."""
+    from src.output.sentiment_analyzer import analyze_meeting_dynamics
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        summary = MeetingSummary.model_validate(data)
+        return analyze_meeting_dynamics(summary.transcript)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/tasks/export
+
 
 # ---------------------------------------------------------------------------
 
