@@ -94,6 +94,14 @@ async def upload_meeting(
         analytics = analyze_meeting_dynamics(transcript)
 
         meeting_id = f"meet_{uuid.uuid4().hex[:8]}"
+
+        from src.pipeline.smart_title_generator import generate_meeting_title
+        meeting_title = generate_meeting_title(
+            gemini,
+            key_discussion_points=extraction.get("key_discussion_points", []),
+            filename=filename,
+        )
+
         summary = MeetingSummary(
             id=meeting_id,
             filename=filename,
@@ -106,6 +114,7 @@ async def upload_meeting(
             confidence_note=extraction.get("confidence_note"),
             analytics=analytics,
             output_language=output_language,
+            meeting_title=meeting_title,
         )
 
         output_path = cfg.output_dir / f"{meeting_id}.json"
@@ -119,7 +128,43 @@ async def upload_meeting(
 
 
 # ---------------------------------------------------------------------------
+# POST /meetings/{meeting_id}/generate-title
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{meeting_id}/generate-title",
+    response_model=dict,
+    summary="(Re-)generate a professional AI meeting title for an existing summary.",
+)
+def generate_title(
+    meeting_id: str,
+    cfg: Config = Depends(get_config),
+) -> dict:
+    """Use Gemini to generate or refresh the meeting title from key discussion points."""
+    from src.pipeline.smart_title_generator import generate_meeting_title
+    from src.services.gemini_client import GeminiService
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summary = MeetingSummary.model_validate(data)
+
+    gemini = GeminiService(api_key=cfg.gemini_api_key, model_name=cfg.gemini_model)
+    new_title = generate_meeting_title(gemini, summary.key_discussion_points, summary.filename)
+
+    summary.meeting_title = new_title
+    json_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+
+    return {"meeting_id": meeting_id, "meeting_title": new_title}
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}
+
 # ---------------------------------------------------------------------------
 
 @router.get(
