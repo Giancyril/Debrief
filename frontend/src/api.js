@@ -124,3 +124,11 @@ export async function generateMeetingTitle(meetingId) {
   }
   return res.json();
 }
+
+export async function fetchRiskReport(meetingId) {
+  const res = await fetch(`/meetings/${encodeURIComponent(meetingId)}/risk-report`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch risk report.");
+  }
+  return res.json();
+}
