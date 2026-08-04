@@ -1,0 +1,19 @@
+[project]
+name = "ai-meeting-summarizer"
+version = "0.1.0"
+description = "Grounded AI Meeting Summarizer with native Gemini audio transcription and structured extraction."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "pydantic>=2.10.0",
+    "python-dotenv>=1.0.0",
+    "google-genai>=0.1.0",
+    "python-multipart>=0.0.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
