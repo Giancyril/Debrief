@@ -12,6 +12,7 @@ import {
   searchMeetings,
   fetchBoardroomBrief,
   fetchNextAgenda,
+  generateMeetingTitle,
 } from "./api";
 
 function createSampleAudioBlob() {
@@ -218,6 +219,16 @@ export default function App() {
       URL.revokeObjectURL(url);
     } catch (err) {
       alert("Failed to export tasks: " + err.message);
+    }
+  };
+
+  const handleRegenerateTitle = async () => {
+    if (!summary?.id) return;
+    try {
+      const res = await generateMeetingTitle(summary.id);
+      setSummary((prev) => ({ ...prev, meeting_title: res.meeting_title }));
+    } catch (err) {
+      alert("Failed to regenerate title: " + err.message);
     }
   };
 
@@ -577,7 +588,22 @@ export default function App() {
             {/* Results Top Card */}
             <div className="results-header-card">
               <div>
-                <div className="results-filename">{summary.filename}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div className="results-filename">{summary.meeting_title || summary.filename}</div>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={handleRegenerateTitle}
+                    title="Regenerate AI Title"
+                    style={{ padding: "2px 6px", fontSize: 11 }}
+                  >
+                    ✨ AI Title
+                  </button>
+                </div>
+                {summary.meeting_title && (
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    Source file: {summary.filename}
+                  </div>
+                )}
                 <div className="results-meta-row">
                   <span className="meta-chip">{summary.created_at}</span>
                   <span className="meta-chip" style={{ fontFamily: "var(--font-mono)" }}>ID: {summary.id}</span>
