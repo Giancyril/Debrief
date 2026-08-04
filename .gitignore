@@ -3,4 +3,5 @@ __pycache__/
 .env
 uploads/
 output/
+!src/output/
 .pytest_cache/
