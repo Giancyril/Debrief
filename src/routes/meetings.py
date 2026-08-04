@@ -1,9 +1,10 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import PlainTextResponse
 
 from src.config import Config
 from src.models.schemas import MeetingSummary, MeetingAnalytics
@@ -14,12 +15,26 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
-# ---------------------------------------------------------------------------
-# Dependency: shared Config instance
-# ---------------------------------------------------------------------------
 
 def get_config() -> Config:
     return Config()
+
+
+# ---------------------------------------------------------------------------
+# GET /meetings/search
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/search",
+    summary="Search past meeting summaries by keyword.",
+)
+def search_meetings(
+    q: str = Query(..., description="Search query string"),
+    cfg: Config = Depends(get_config),
+):
+    """Perform keyword search across saved meeting summaries."""
+    from src.storage.meeting_search import search_past_meetings
+    return search_past_meetings(cfg.output_dir, q)
 
 
 # ---------------------------------------------------------------------------
@@ -33,21 +48,10 @@ def get_config() -> Config:
     summary="Upload meeting audio and return a full meeting summary.",
 )
 async def upload_meeting(
-    file: UploadFile = File(..., description="Meeting audio file (MP3, WAV, M4A, AAC, FLAC, OGG, WebM)."),
+    file: UploadFile = File(..., description="Meeting audio file."),
+    output_language: str = Query(default="English", description="Target prose output language"),
     cfg: Config = Depends(get_config),
 ) -> MeetingSummary:
-    """
-    Upload a meeting audio file.
-
-    Pipeline:
-    1. Read & validate audio bytes.
-    2. Save to temporary storage.
-    3. Run full pipeline: transcribe → extract → draft email.
-    4. Persist summary JSON to `output/`.
-    5. Delete temporary audio.
-    6. Return MeetingSummary.
-    """
-    # --- Read bytes ---
     try:
         audio_bytes = await file.read()
     except Exception as exc:
@@ -58,7 +62,6 @@ async def upload_meeting(
 
     filename = file.filename or "meeting_audio"
 
-    # --- Validate ---
     validate_audio_bytes(
         data=audio_bytes,
         filename=filename,
@@ -66,20 +69,18 @@ async def upload_meeting(
         max_size_bytes=cfg.max_upload_size_mb * 1024 * 1024,
     )
 
-    # --- Save temporarily ---
     fm = FileManager(cfg.upload_dir)
     audio_path = fm.save(audio_bytes, filename)
 
     try:
         mime_type = get_audio_mime_type(filename)
 
-        # --- Pipeline ---
         from src.services.gemini_client import GeminiService
         from src.pipeline.transcriber import transcribe_audio
         from src.pipeline.extractor import extract_meeting_data
         from src.pipeline.email_drafter import draft_follow_up_email
+        from src.output.sentiment_analyzer import analyze_meeting_dynamics
         import uuid
-        from datetime import datetime, timezone
 
         gemini = GeminiService(
             api_key=cfg.gemini_api_key,
@@ -87,16 +88,11 @@ async def upload_meeting(
             inline_threshold_mb=cfg.inline_audio_threshold_mb,
         )
 
-        # Stage 3: Transcription
         transcript = transcribe_audio(gemini, audio_path, mime_type)
-
-        # Stage 4: Extraction
         extraction = extract_meeting_data(gemini, transcript)
-
-        # Stage 5: Email draft
         email_draft = draft_follow_up_email(gemini, extraction)
+        analytics = analyze_meeting_dynamics(transcript)
 
-        # Build summary
         meeting_id = f"meet_{uuid.uuid4().hex[:8]}"
         summary = MeetingSummary(
             id=meeting_id,
@@ -108,9 +104,10 @@ async def upload_meeting(
             open_questions=extraction.get("open_questions", []),
             email_draft=email_draft,
             confidence_note=extraction.get("confidence_note"),
+            analytics=analytics,
+            output_language=output_language,
         )
 
-        # Persist JSON
         output_path = cfg.output_dir / f"{meeting_id}.json"
         output_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
         logger.info(f"Meeting summary saved: {output_path}")
@@ -134,7 +131,6 @@ def get_meeting(
     meeting_id: str,
     cfg: Config = Depends(get_config),
 ) -> MeetingSummary:
-    """Fetch a saved meeting summary by its ID."""
     safe_id = Path(meeting_id).name
     json_path = cfg.output_dir / f"{safe_id}.json"
 
@@ -168,19 +164,13 @@ def update_speakers(
     mapping: dict[str, str],
     cfg: Config = Depends(get_config),
 ) -> MeetingSummary:
-    """
-    Rename speaker labels across transcript segments, action item owners, and store mapping.
-    """
     from src.pipeline.speaker_manager import rename_speakers
 
     safe_id = Path(meeting_id).name
     json_path = cfg.output_dir / f"{safe_id}.json"
 
     if not json_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Meeting '{safe_id}' not found.",
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
 
     try:
         data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -189,11 +179,7 @@ def update_speakers(
         json_path.write_text(updated.model_dump_json(indent=2), encoding="utf-8")
         return updated
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update speakers: {exc}",
-        )
-
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +197,6 @@ def update_action_item_status(
     status_body: dict,
     cfg: Config = Depends(get_config),
 ) -> MeetingSummary:
-    """Update action item status: 'open', 'in_progress', or 'completed'."""
     from src.pipeline.action_status_manager import update_action_status
 
     safe_id = Path(meeting_id).name
@@ -227,10 +212,6 @@ def update_action_item_status(
         updated = update_action_status(summary, action_id, new_status)
         json_path.write_text(updated.model_dump_json(indent=2), encoding="utf-8")
         return updated
-    except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
@@ -248,7 +229,6 @@ def get_meeting_analytics(
     meeting_id: str,
     cfg: Config = Depends(get_config),
 ) -> MeetingAnalytics:
-    """Compute and return talk-time distribution, tone classification, and participation index."""
     from src.output.sentiment_analyzer import analyze_meeting_dynamics
 
     safe_id = Path(meeting_id).name
@@ -266,9 +246,127 @@ def get_meeting_analytics(
 
 
 # ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/brief
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/brief",
+    response_class=PlainTextResponse,
+    summary="Generate a 1-page boardroom memo brief.",
+)
+def get_boardroom_brief(
+    meeting_id: str,
+    cfg: Config = Depends(get_config),
+):
+    from src.output.boardroom_brief import generate_boardroom_brief
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summary = MeetingSummary.model_validate(data)
+    brief = generate_boardroom_brief(summary)
+    return PlainTextResponse(content=brief, media_type="text/plain")
+
+
+# ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/next-agenda
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/next-agenda",
+    response_class=PlainTextResponse,
+    summary="Generate next meeting agenda markdown from pending items.",
+)
+def get_next_agenda(
+    meeting_id: str,
+    cfg: Config = Depends(get_config),
+):
+    from src.output.agenda_generator import generate_next_agenda
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summary = MeetingSummary.model_validate(data)
+    agenda = generate_next_agenda(summary)
+    return PlainTextResponse(content=agenda, media_type="text/markdown")
+
+
+# ---------------------------------------------------------------------------
+# GET /meetings/{meeting_id}/diff
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{meeting_id}/diff",
+    summary="Compare current meeting with a previous meeting in a series.",
+)
+def get_meeting_diff(
+    meeting_id: str,
+    against: str = Query(..., description="Previous meeting ID to compare against"),
+    cfg: Config = Depends(get_config),
+):
+    from src.output.meeting_diff import compare_meetings
+
+    path_curr = cfg.output_dir / f"{Path(meeting_id).name}.json"
+    path_prev = cfg.output_dir / f"{Path(against).name}.json"
+
+    if not path_curr.exists() or not path_prev.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or both meeting IDs not found.")
+
+    curr = MeetingSummary.model_validate(json.loads(path_curr.read_text(encoding="utf-8")))
+    prev = MeetingSummary.model_validate(json.loads(path_prev.read_text(encoding="utf-8")))
+    return compare_meetings(curr, prev)
+
+
+# ---------------------------------------------------------------------------
+# POST /meetings/{meeting_id}/re-draft-email
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{meeting_id}/re-draft-email",
+    response_model=dict,
+    summary="Re-draft follow-up email in a specific executive tone.",
+)
+def redraft_email(
+    meeting_id: str,
+    tone: str = Query(default="action_oriented", enum=["formal_boardroom", "concise_slack", "action_oriented"]),
+    cfg: Config = Depends(get_config),
+):
+    from src.services.gemini_client import GeminiService
+    from src.output.email_tone_drafter import redraft_email_tone
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+    summary = MeetingSummary.model_validate(data)
+
+    gemini = GeminiService(api_key=cfg.gemini_api_key, model_name=cfg.gemini_model)
+    extraction = {
+        "action_items": summary.action_items,
+        "decisions": summary.decisions,
+        "key_discussion_points": summary.key_discussion_points,
+    }
+    new_draft = redraft_email_tone(gemini, extraction, tone)
+    summary.email_draft = new_draft
+    summary.email_tone = tone
+    json_path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+
+    return {"meeting_id": meeting_id, "tone": tone, "email_draft": new_draft}
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/tasks/export
-
-
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -280,9 +378,7 @@ def export_tasks(
     format: str = Query(default="csv", enum=["csv", "ics", "markdown"]),
     cfg: Config = Depends(get_config),
 ):
-    """Export action items from a meeting summary as CSV, ICS, or Markdown checklist."""
     from src.output.task_exporter import export_to_csv, export_to_ics, export_to_markdown_checklist
-    from fastapi.responses import PlainTextResponse
 
     safe_id = Path(meeting_id).name
     json_path = cfg.output_dir / f"{safe_id}.json"
@@ -311,7 +407,6 @@ def export_tasks(
 
 # ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/export
-
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -324,9 +419,6 @@ def export_meeting(
     format: str = Query(default="markdown", enum=["markdown", "text"]),
     cfg: Config = Depends(get_config),
 ) -> dict:
-    """
-    Export a saved meeting summary in markdown or plain text format.
-    """
     safe_id = Path(meeting_id).name
     json_path = cfg.output_dir / f"{safe_id}.json"
 
@@ -352,10 +444,6 @@ def export_meeting(
 
     return {"meeting_id": meeting_id, "format": format, "content": content}
 
-
-# ---------------------------------------------------------------------------
-# Export helpers
-# ---------------------------------------------------------------------------
 
 def _to_markdown(s: MeetingSummary) -> str:
     lines = [
