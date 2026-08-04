@@ -76,6 +76,32 @@ class MeetingAnalytics(BaseModel):
     total_words: int = Field(default=0, description="Total word count in transcript.")
 
 
+class RiskFlag(BaseModel):
+    flag_type: str = Field(description="Risk category identifier (e.g. 'UNASSIGNED_TASK', 'NO_DUE_DATE').")
+    severity: str = Field(description="Risk severity: 'LOW', 'MEDIUM', or 'HIGH'.")
+    message: str = Field(description="Human-readable description of the risk.")
+    action_item_id: Optional[str] = Field(
+        default=None,
+        description="Associated action item ID if flag is item-specific.",
+    )
+
+
+class RiskReport(BaseModel):
+    overall_risk_level: str = Field(
+        default="LOW",
+        description="Aggregate risk level: 'LOW', 'MEDIUM', or 'HIGH'.",
+    )
+    risk_score: int = Field(default=0, description="Numeric risk score (0-100).")
+    flags: List[RiskFlag] = Field(default_factory=list, description="Individual risk flags detected.")
+    recommendations: List[str] = Field(
+        default_factory=list,
+        description="Actionable recommendations to mitigate identified risks.",
+    )
+    total_tasks: int = Field(default=0)
+    unassigned_count: int = Field(default=0)
+    no_due_date_count: int = Field(default=0)
+
+
 class MeetingSummary(BaseModel):
     id: str = Field(description="Unique meeting summary identifier.")
     filename: str = Field(description="Original uploaded audio filename.")
@@ -110,3 +136,11 @@ class MeetingSummary(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Categorization tags e.g. ['Sprint', 'Sales'].")
     output_language: str = Field(default="English", description="Target prose language.")
     email_tone: str = Field(default="action_oriented", description="Tone style of follow-up email.")
+    meeting_title: Optional[str] = Field(
+        default=None,
+        description="AI-generated concise professional meeting title (5-8 words).",
+    )
+    risk_report: Optional[RiskReport] = Field(
+        default=None,
+        description="Meeting delivery risk analysis report.",
+    )
