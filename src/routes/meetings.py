@@ -197,7 +197,47 @@ def update_speakers(
 
 
 # ---------------------------------------------------------------------------
+# PATCH /meetings/{meeting_id}/actions/{action_id}
+# ---------------------------------------------------------------------------
+
+@router.patch(
+    "/{meeting_id}/actions/{action_id}",
+    response_model=MeetingSummary,
+    summary="Update the status of a specific action item.",
+)
+def update_action_item_status(
+    meeting_id: str,
+    action_id: str,
+    status_body: dict,
+    cfg: Config = Depends(get_config),
+) -> MeetingSummary:
+    """Update action item status: 'open', 'in_progress', or 'completed'."""
+    from src.pipeline.action_status_manager import update_action_status
+
+    safe_id = Path(meeting_id).name
+    json_path = cfg.output_dir / f"{safe_id}.json"
+
+    if not json_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Meeting '{safe_id}' not found.")
+
+    new_status = status_body.get("status", "open")
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        summary = MeetingSummary.model_validate(data)
+        updated = update_action_status(summary, action_id, new_status)
+        json_path.write_text(updated.model_dump_json(indent=2), encoding="utf-8")
+        return updated
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
 # GET /meetings/{meeting_id}/tasks/export
+
 # ---------------------------------------------------------------------------
 
 @router.get(
