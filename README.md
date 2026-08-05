@@ -248,21 +248,8 @@ The backend follows a RESTful pattern. All endpoints are mounted under `/meeting
 
 ## Quick Start
 
-### 1. Environment Setup
 
-```bash
-cp .env.example .env
-```
-
-`.env`:
-```ini
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-MAX_UPLOAD_SIZE_MB=500
-INLINE_AUDIO_THRESHOLD_MB=20
-```
-
-### 2. Install Dependencies & Run Backend
+### 1. Install Dependencies & Run Backend
 
 ```bash
 pip install -r requirements.txt
@@ -271,7 +258,7 @@ uvicorn src.main:app --reload --port 8000
 
 API docs available at `http://localhost:8000/docs`.
 
-### 3. Run Frontend
+### 2. Run Frontend
 
 ```bash
 cd frontend
@@ -281,7 +268,7 @@ npm run dev
 
 Open `http://localhost:5173` in your browser.
 
-### 4. Run Test Suite
+### 3. Run Test Suite
 
 ```bash
 pytest tests/ -v
